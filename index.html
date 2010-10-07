@@ -1,0 +1,315 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en"><head>
+  <title>RAID Operations</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+  <!-- All other media -->
+  <style type="text/css" media="screen">
+
+body {
+  font-family : "Trebuchet MS", sans-serif;
+  font-size : 13px;
+  background-color : white;
+  margin : 0 0 0 0;
+}
+.sep {
+  margin : 0 0 0 0;
+  clear: both;
+}
+
+#raid_parity_container {
+  margin: 2px 10px 2px 10px;
+}
+
+.raid_parity {
+  width: 1600px;
+}
+.raid_head {
+  font-size: large;
+  font-weight: bold;
+  padding : 20px 5px 5px 5px;
+  width: 400px;
+}
+
+.raid_data_block {
+  display: inline;
+  margin : 0 0 0 0;
+  width: 150px;
+  float: left;
+}
+.raid_data_block_idx {
+  display: inline;
+  margin : 0 0 0 0;
+  width: 70px;
+  float: left;
+}
+.blk_data {
+  font-family: monospace;
+  padding : 2px 5px 2px 5px;
+}
+.blk_head {
+  font-size: medium;
+  font-weight: bold;
+  background: #eeeeee;
+  padding : 20px 5px 5px 5px;
+}
+
+.highlight {
+  background: #ccffcc;
+}
+.odd {
+  background: #eeeeee;
+}
+
+.lose_blk {
+  color: red;
+  cursor:pointer;
+}
+.lose_blk_example {
+  color: red;
+  font-size: medium;
+  font-weight: bold;
+}
+#write_blks {
+  cursor:pointer;
+  font-size: medium;
+  font-weight: bold;
+  padding: 1px 3px 1px 3px;
+  border-left: 1px solid #bbbbbb;
+  border-top: 1px solid #bbbbbb;
+  border-right: 2px solid #888888;
+  border-bottom: 2px solid #888888;
+}
+.lost {
+  color: #dddddd;
+}
+.recovered {
+  color: #6666ff;
+}
+  </style>
+
+  <script type="text/javascript" src="http://code.jquery.com/jquery-1.4.1.min.js"></script>
+  <script type="text/javascript" src="http://nje.github.com/jquery-tmpl/jquery.tmpl.js"></script>
+
+  <script type="text/javascript">
+  //<![CDATA[
+
+function pad(number, length) {
+  var str = '' + number;
+  while (str.length < length) {
+    str = '0' + str;
+  }
+  return str;
+}
+
+var blks = [];
+var num_blks;
+var blk_len;
+
+function renew_blocks () {
+  blks = [];
+
+  num_blks = parseInt($("#num_blks_sel option:selected").text());
+  blk_len = parseInt($("#blk_len_sel option:selected").text());
+
+  populate_raid_blocks(blks);
+  calculate_parity(blks)
+  layout_blocks();
+}
+
+function populate_raid_blocks (blks) {
+  var blk_idx = 0;
+
+  for (blk_idx=0; blk_idx<num_blks; blk_idx++) {
+    var D = new Array();
+    var Ds = new Array();
+    var idx = 0;
+    for (idx=0; idx<blk_len; idx++) {
+      var num = Math.floor(Math.random()*1294967295);
+      D.push(num);
+      Ds.push(pad(num.toString(16), 8));
+    }
+    blks[blk_idx] = {
+      Name: "Data Block " + blk_idx,
+      Recoverable: 1,
+      Writable: 1,
+      Index: blk_idx,
+      Data: D,
+      DataString: Ds
+    };
+  }
+}
+
+function calculate_parity (blks) {
+  var D = new Array();
+  var Ds = new Array();
+  var idx = 0;
+  for (idx=0; idx<blk_len; idx++) {
+    var par = 0;
+    var blk_idx = 0;
+    for (blk_idx=0; blk_idx<num_blks; blk_idx++) {
+      par ^= blks[blk_idx].Data[idx];
+    }
+    D.push(par);
+    Ds.push(pad(par.toString(16), 8));
+  }
+  blks[num_blks] = {
+    Name: "Parity Block ",
+    Recoverable: 1,
+    Index: num_blks,
+    Data: D,
+    DataString: Ds
+  };
+}
+
+function layout_blocks() {
+  $("#raid_parity_container").empty();
+  $("#RaidBlockTemplateIdx").tmpl(blks[0]).appendTo("#raid_parity_container");
+  $("#RaidBlockTemplate").tmpl(blks).appendTo("#raid_parity_container");
+
+  $(".lose_blk").click(function(event){
+    recover_block($(this).parent().parent().parent());
+  });
+
+  $("#write_blks").click(function(event){
+    write_blocks();
+  });
+}
+
+function recover_block (blk_div) {
+  var D = new Array();
+  var Ds = new Array();
+  var idx = 0;
+  var rec_idx = num_blks+1;
+  var patt_blk_idx = /\d+/g;
+
+  var recov_id = $(blk_div).attr("id");
+  var recov_idx = patt_blk_idx.exec(recov_id);
+
+  for (idx=0; idx<blk_len; idx++) {
+    var par = 0;
+    var blk_idx = 0;
+    for (blk_idx=0; blk_idx<num_blks+1; blk_idx++) {
+      // console.log ("Recover! " + recov_idx + ", num_blks=" + num_blks + ", blk_idx=" + blk_idx);
+      if (blk_idx != recov_idx) {
+        par ^= blks[blk_idx].Data[idx];
+      }
+    }
+    D.push(par);
+    Ds.push(pad(par.toString(16), 8));
+  }
+  blks[num_blks+1] = {
+    Name: "Recovered Block ",
+    Index: num_blks+1,
+    Data: D,
+    DataString: Ds
+  };
+  layout_blocks();
+
+  $(".blk_data").removeClass("lost");
+  $("#" + recov_id + " .blk_data").addClass("lost");
+
+  $("#raid_data_blk_" + (num_blks+1) + " .blk_data").addClass("recovered");
+
+}
+
+function write_blocks () {
+  var Di = new Array();
+  var num_blks = $("input:checked").length;
+  var patt_blk_idx = /\d+/;
+
+  $("input:checked").each(function(){
+    var bl_id = $(this).attr("id");
+    var bl_idx = patt_blk_idx.exec(bl_id);
+    // alert(bl_id + " -> " + bl_idx);
+  });
+}
+  //]]>
+  </script>
+
+  <script type="text/javascript">
+  //<![CDATA[
+
+  $(document).ready (function(){
+    renew_blocks();
+
+    $("select").change(function(){
+      renew_blocks();
+    });
+  });
+
+  //]]>
+  </script>
+
+</head><body>
+
+<h1>RAID Operations</h1>
+
+<ul>
+<li> Dimensions of RAID array
+
+<form>
+Number of blocks: <select id="num_blks_sel">
+  <option value="2">2</option>
+  <option value="3">3</option>
+  <option value="4">4</option>
+  <option value="5" selected>5</option>
+  <option value="6">6</option>
+</select>
+Length of block: <select id="blk_len_sel">
+  <option value="32">32</option>
+  <option value="64">64</option>
+  <option value="128" selected>128</option>
+  <option value="256">256</option>
+  <option value="512">512</option>
+  <option value="1024">1024</option>
+</select>
+</form>
+</li>
+<li>Press red crosses (<span class="lose_blk_example">x</span>) to mark a block lost, and initiate recovery</li>
+<li>Select one or more block and <span id="write_blks">initiate write<span>
+
+</li>
+</ul>
+
+<div id='raid_parity_container'>
+
+<div class="sep"></div>
+</div>
+
+<script id="RaidBlockTemplateIdx" type="text/x-jquery-tmpl">
+  <div class="raid_data_block_idx">
+    <div class="blk_head">Index<div>&nbsp;</div></div>
+    {{each DataString}}
+      <div class="blk_data">${$index} </div>
+    {{/each}}
+  </div>
+</script>
+
+<script id="RaidBlockTemplate" type="text/x-jquery-tmpl">
+  <div class="raid_data_block" id="raid_data_blk_${Index}">
+    <div class="blk_head">${Name}<div>
+    {{if Recoverable}}
+     <span class="lose_blk" title="Recover ${Name}">x</span>
+    {{else}}
+     <span>&nbsp;</span>
+    {{/if}}
+    {{if Writable}}
+     <span class="sel_wr_blk" title="Select ${Name} for writing">
+      <input type="checkbox" name="${Name}" id="sel_wr_blk_${Index}">
+    </span>
+    {{else}}
+     <span>&nbsp;</span>
+    {{/if}}
+    </div></div>
+    {{each DataString}}
+      <div class="blk_data">0x${$value} </div>
+    {{/each}}
+  </div>
+</script>
+
+
+</body>
+
+</html>
+
